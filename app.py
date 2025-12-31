@@ -3,7 +3,7 @@ from stl import mesh
 from streamlit_stl import stl_from_file
 import os
 
-# --- 1. 材料与单价配置 ---
+# --- 1. 核心材料与报价参数配置 ---
 MATERIALS = {
     "PLA (工程塑料)": {"density": 1.25, "price_factor": 1.0, "note": "适合常规手办、结构件"},
     "光敏树脂 (高精度)": {"density": 1.15, "price_factor": 2.2, "note": "表面光滑，适合精细模型"},
@@ -13,18 +13,19 @@ MATERIALS = {
     "钛合金 (TC4)": {"density": 4.43, "price_factor": 22.0, "note": "极高强度，航天级品质"}
 }
 
-STARTUP_FEE = 20.0        # 起步费
-BASE_PRICE_PER_GRAM = 0.6 # 基础单价
-PROFIT_MARGIN = 2.5       # 综合利润倍数
+STARTUP_FEE = 20.0        # 起步费（元）
+BASE_PRICE_PER_GRAM = 0.6 # 基础单价（元/克）
+PROFIT_MARGIN = 2.5       # 利润倍数
 
-# --- 2. 页面配置 ---
+# --- 2. 页面设置 ---
 st.set_page_config(page_title="西部制造 | 3D打印在线报价", layout="wide")
 
 # 侧边栏
 with st.sidebar:
     st.header("🛠️ 西部制造服务中心")
     st.write("---")
-    mat_name = st.selectbox("第一步：选择打印材料", list(MATERIALS.keys()))
+    st.subheader("第一步：选择材料")
+    mat_name = st.selectbox("请选择打印材料", list(MATERIALS.keys()))
     selected_mat = MATERIALS[mat_name]
     
     if selected_mat['density'] > 0:
@@ -36,58 +37,74 @@ with st.sidebar:
     st.code("微信：xibuzhizao-cpu", language=None)
     st.caption("提示：STEP文件建议添加微信人工核价")
 
-# --- 3. 主界面 ---
+# --- 3. 主界面布局 ---
 st.title("💰 3D打印在线自动报价系统")
-st.write("支持 STL 自动算价；STEP 格式支持手动输入体积报价。")
+st.write("支持 STL 自动算价；STEP/STP 格式支持手动输入体积报价。")
 
 uploaded_file = st.file_uploader("点击或拖拽上传模型文件", type=["stl", "step", "stp", "obj"])
 
 if uploaded_file:
     file_ext = uploaded_file.name.split('.')[-1].lower()
+    
+    # 左右分栏
     col_left, col_right = st.columns([3, 2])
 
-    # 情况 A：STEP 格式
+    # --- 情况 A：STEP/STP 格式 (引导手动输入) ---
     if file_ext in ['step', 'stp']:
         with col_left:
-            st.warning(f"⚠️ 检测到工业格式：{uploaded_file.name}")
-            st.info("系统无法直接解析此格式体积，请在右侧输入体积手动报价。")
+            st.warning(f"⚠️ 已检测到 STEP 工业格式：{uploaded_file.name}")
+            st.info("系统无法自动提取此格式体积。建议在设计软件中查看零件体积(cm³)。")
+            
         with col_right:
             st.subheader("📝 手动辅助报价")
-            manual_vol = st.number_input("请输入模型体积 (cm³)：", min_value=0.0, step=0.1)
-            if manual_vol > 0 and selected_mat['density'] > 0:
-                weight = manual_vol * selected_mat['density']
-                price = max(STARTUP_FEE, weight * BASE_PRICE_PER_GRAM * selected_mat['price_factor'] * PROFIT_MARGIN)
-                st.metric(label="预估总价 (元)", value=f"￥{price:.2f}")
-                st.write(f"**预估重量：** {weight:.2f} 克")
+            manual_vol = st.number_input("请输入模型体积 (cm³)：", min_value=0.0, step=0.1, key="manual_v")
+            
+            if manual_vol > 0:
+                if selected_mat['density'] == 0:
+                    st.error("请在左侧侧边栏选择具体的材料类型")
+                else:
+                    weight = manual_vol * selected_mat['density']
+                    calc_price = weight * BASE_PRICE_PER_GRAM * selected_mat['price_factor'] * PROFIT_MARGIN
+                    final_price = max(STARTUP_FEE, calc_price)
+                    
+                    st.metric(label="参考总价 (元)", value=f"￥{final_price:.2f}")
+                    st.write(f"**预估重量：** {weight:.2f} 克")
+                    st.success("报价已生成！")
 
-    # 情况 B：STL 格式
+    # --- 情况 B：STL 格式 ---
     else:
         with open("temp.stl", "wb") as f:
             f.write(uploaded_file.getbuffer())
+
         with col_left:
             st.subheader("🔍 3D 模型预览")
             try:
-                stl_from_file(file_path="temp.stl", color="#007bff")
+                stl_from_file(file_path="temp.stl", color="#007bff", material="flat")
             except:
                 st.write("预览载入中...")
+
         with col_right:
             st.subheader("💰 自动报价单")
             try:
                 your_mesh = mesh.Mesh.from_file("temp.stl")
                 volume, _, _ = your_mesh.get_mass_properties()
                 vol_cm3 = volume / 1000 
+                
                 if selected_mat['density'] > 0:
                     weight = vol_cm3 * selected_mat['density']
-                    price = max(STARTUP_FEE, weight * BASE_PRICE_PER_GRAM * selected_mat['price_factor'] * PROFIT_MARGIN)
-                    st.metric(label="预估总价 (元)", value=f"￥{price:.2f}")
+                    calc_price = weight * BASE_PRICE_PER_GRAM * selected_mat['price_factor'] * PROFIT_MARGIN
+                    final_price = max(STARTUP_FEE, calc_price)
+
+                    st.metric(label="预估总价 (元)", value=f"￥{final_price:.2f}")
+                    st.write(f"**预估重量：** {weight:.2f} 克")
                     st.write(f"**模型体积：** {vol_cm3:.2f} cm³")
                     st.balloons()
             except:
-                st.error("解析失败，请检查文件。")
+                st.error("解析失败。")
 
 else:
     st.info("👋 欢迎！请上传模型文件开始报价。")
 
-# --- 4. 页脚 (已修复报错的赋值问题) ---
+# --- 4. 页脚 (修正赋值错误) ---
 st.markdown("---")
 st.markdown("<p style='text-align: center; color: gray;'>© 2024 西部制造 | 工业级3D打印专家</p>", unsafe_allow_index=True)
