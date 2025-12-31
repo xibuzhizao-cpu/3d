@@ -1,45 +1,39 @@
-import os
-import sys
-import subprocess
-
-# --- 强力初始化：如果缺零件，强制在后台静默安装 ---
-def install_requirements():
-    try:
-        import stl
-    except ImportError:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "numpy-stl"])
-        st.rerun()
-
 import streamlit as st
-
-# 启动时先检查安装
-install_requirements()
 from stl import mesh
+import os
 
-# --- 你的报价逻辑 ---
-STARTUP_FEE = 20.0  # 起步费
-PRICE_PER_GRAM = 0.6  # 每克材料费
-DENSITY = 1.25  # PLA材料密度
-PROFIT_MARGIN = 2.5  # 利润倍数
+# --- 报价参数设置 ---
+STARTUP_FEE = 20.0     # 起步费（元）
+PRICE_PER_GRAM = 0.6   # 每克材料成本（元）
+DENSITY = 1.25         # PLA材料密度 (g/cm³)
+PROFIT_MARGIN = 2.5    # 利润倍数
 
-st.set_page_config(page_title="我的3D打印报价单")
-st.title("🚀 3D打印在线自动报价")
+st.set_page_config(page_title="3D打印在线报价", layout="centered")
+st.title("💰 3D打印在线自动报价")
 
-uploaded_file = st.file_uploader("第一步：请上传您的 STL 模型文件", type=["stl"])
+uploaded_file = st.file_uploader("请上传您的 STL 模型文件", type=["stl"])
 
 if uploaded_file:
+    # 临时保存上传的文件
     with open("temp.stl", "wb") as f:
         f.write(uploaded_file.getbuffer())
     
     try:
+        # 使用 mesh 库解析体积
         your_mesh = mesh.Mesh.from_file("temp.stl")
         volume, _, _ = your_mesh.get_mass_properties()
-        vol_cm3 = volume / 1000 
+        vol_cm3 = volume / 1000  # 换算为立方厘米
+        
+        # 计算逻辑
         weight = vol_cm3 * DENSITY
+        # 计算总价：如果计算出的价格低于起步费，则按起步费计算
         total_price = max(STARTUP_FEE, weight * PRICE_PER_GRAM * PROFIT_MARGIN)
         
+        # 显示结果
         st.balloons()
-        st.success(f"### 💰 预估报价：￥{total_price:.2f}")
-        st.info(f"模型信息：预估重量约 {weight:.2f} 克")
+        st.success(f"### 预估报价：￥{total_price:.2f}")
+        st.write(f"模型重量：约 {weight:.2f} 克")
+        st.info("💡 提示：本价格仅供参考，最终价格以客服确认后为准。")
+        
     except Exception as e:
-        st.error(f"解析失败: {e}")
+        st.error(f"解析失败，请确保文件是标准的 STL 格式。")
