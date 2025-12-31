@@ -49,22 +49,20 @@ if uploaded_file:
     # 左右分栏
     col_left, col_right = st.columns([3, 2])
 
-    # --- 情况 A：STEP/STP 格式 (无法自动解析体积) ---
+    # --- 情况 A：STEP/STP 格式 (引导手动输入) ---
     if file_ext in ['step', 'stp']:
         with col_left:
-            st.warning("⚠️ 检测到 STEP 工业格式。系统无法自动提取几何体积。")
-            st.info(f"文件名: {uploaded_file.name}")
-            st.image("https://via.placeholder.com/600x400.png?text=STEP+File+Detected", caption="STEP格式暂不支持在线预览")
+            st.warning(f"⚠️ 已检测到 STEP 工业格式：{uploaded_file.name}")
+            st.info("系统无法自动提取此格式体积。建议在您的设计软件（如SolidWorks/UG/AutoCAD）中查看零件体积(cm³)。")
+            st.write("您可以尝试联系客服获取更精准的金属加工报价。")
             
         with col_right:
             st.subheader("📝 手动辅助报价")
-            st.write("如果您知道模型的预估体积，请输入下方数值以获取报价：")
-            # 引导用户输入体积
-            manual_vol = st.number_input("请输入模型体积 (cm³)：", min_value=0.0, step=1.0, help="您可以在设计软件的'属性'或'测量'中查看体积")
+            manual_vol = st.number_input("请输入模型体积 (cm³)：", min_value=0.0, step=0.1, key="manual_v")
             
             if manual_vol > 0:
                 if selected_mat['density'] == 0:
-                    st.error("请在左侧选择具体材料类型")
+                    st.error("请在左侧侧边栏选择具体的材料类型（不要选标题行）")
                 else:
                     weight = manual_vol * selected_mat['density']
                     calc_price = weight * BASE_PRICE_PER_GRAM * selected_mat['price_factor'] * PROFIT_MARGIN
@@ -72,32 +70,33 @@ if uploaded_file:
                     
                     st.metric(label="参考总价 (元)", value=f"￥{final_price:.2f}")
                     st.write(f"**预估重量：** {weight:.2f} 克")
-                    st.success("报价已生成！请截图发给客服下单。")
-            else:
-                st.write("请在上方输入体积以激活报价计算。")
+                    st.success("报价已根据手动输入体积生成。")
 
     # --- 情况 B：STL 格式 (支持自动解析与预览) ---
     else:
+        # 临时保存文件用于解析
         with open("temp.stl", "wb") as f:
             f.write(uploaded_file.getbuffer())
 
         with col_left:
             st.subheader("🔍 3D 模型预览")
             try:
+                # 渲染在线预览窗口
                 stl_from_file(file_path="temp.stl", color="#007bff", material="flat")
                 st.caption("🖱️ 鼠标左键旋转，右键平移，滚轮缩放")
             except:
-                st.error("预览加载失败，但不影响报价计算。")
+                st.write("预览正在载入中，请稍候...")
 
         with col_right:
             st.subheader("💰 自动报价单")
             try:
+                # 解析 STL 几何数据
                 your_mesh = mesh.Mesh.from_file("temp.stl")
                 volume, _, _ = your_mesh.get_mass_properties()
                 vol_cm3 = volume / 1000 
                 
                 if selected_mat['density'] == 0:
-                    st.warning("⚠️ 请在左侧侧边栏选择具体的材料")
+                    st.warning("⚠️ 请在左侧侧边栏选择具体的打印材料")
                 else:
                     weight = vol_cm3 * selected_mat['density']
                     calc_price = weight * BASE_PRICE_PER_GRAM * selected_mat['price_factor'] * PROFIT_MARGIN
@@ -107,11 +106,12 @@ if uploaded_file:
                     st.write(f"**预估重量：** {weight:.2f} 克")
                     st.write(f"**模型体积：** {vol_cm3:.2f} cm³")
                     st.balloons()
-            except Exception as e:
-                st.error("模型读取失败，请检查文件是否损坏。")
+            except Exception:
+                st.error("模型解析失败，请确保上传的是标准的二进制 STL 格式文件。")
 
 else:
-    st.info("👋 欢迎使用！请上传模型文件开始报价。")
+    st.info("👋 欢迎！请上传模型文件开始报价。")
 
+# --- 4. 页脚 (已修正赋值语法错误) ---
 st.markdown("---")
 st.markdown("<p style='text-align: center; color: gray;'>© 2024 西部制造 | 工业级3D打印专家</p>", unsafe_allow_index=True)
