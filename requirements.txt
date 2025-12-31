@@ -1,2 +1,4 @@
 numpy-stl
 streamlit-stl
+trimesh
+scipy
